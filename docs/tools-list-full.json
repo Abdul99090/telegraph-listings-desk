@@ -1,0 +1,305 @@
+{
+  "serverInfo": {
+    "name": "telegraph",
+    "version": "2.0.0"
+  },
+  "protocolVersion": "2025-03-26",
+  "capturedAt": "2026-11-13T18:12:45.978Z",
+  "tools": [
+    {
+      "name": "telegraph_ask",
+      "title": "Ask Telegraph",
+      "description": "Ask the Telegraph network a question: live prices, FX, weather, web and academic search, security, code review, compliance and 100+ other intents. The node routes it to the best-ranked live miner and returns its answer in the intent's fields. Costs about $0.01, paid automatically from the Telegraph escrow balance (a failed ask is never billed; repeating the same ask within a minute is not paid twice).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question, in plain words."
+          },
+          "intent": {
+            "type": "string",
+            "description": "Optional exact intent, e.g. CRYPTO_PRICE_USD (see telegraph_find_intents). Only that intent's miners answer."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Optional params for the intent, as telegraph_intent lists them, e.g. {\"location\": \"Lahore\"}. Needs intent."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_ask_miner",
+      "title": "Ask one miner",
+      "description": "Ask one specific miner (by id or slug from telegraph_find_miners) instead of letting the node pick. Send a question (with intent when the miner serves several), or call one of its endpoints directly with endpoint, method and payload (the raw answer comes back). No fallback miner is tried. Paid like telegraph_ask, at that miner's price.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "miner": {
+            "type": "string",
+            "description": "Miner id or slug."
+          },
+          "question": {
+            "type": "string",
+            "description": "The question, in plain words."
+          },
+          "intent": {
+            "type": "string",
+            "description": "Optional exact intent, e.g. CRYPTO_PRICE_USD (see telegraph_find_intents). Only that intent's miners answer."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Optional params for the intent, as telegraph_intent lists them, e.g. {\"location\": \"Lahore\"}. Needs intent."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Direct call: the miner's endpoint path, e.g. /query (telegraph_find_miners lists them)."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "description": "Direct call: HTTP method (default GET)."
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Direct call: the body or query fields the endpoint takes."
+          }
+        },
+        "required": [
+          "miner"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_find_intents",
+      "title": "Find intents",
+      "description": "Search the intents (kinds of question) the network answers, with how many miners serve each. Free. Without search, lists every intent name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words to look for, e.g. 'weather', 'bitcoin price', 'code review'."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Most results to return (default 10)."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_intent",
+      "title": "Intent details",
+      "description": "One intent: its kind (deterministic, hybrid or judgment), the params an ask can send, the fields the answer comes back in, and its top-ranked miners. Free.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "Intent name, e.g. WEATHER_CHECK_TEMPERATURE."
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_find_miners",
+      "title": "Find miners",
+      "description": "Miners for an intent, best-ranked first, with status, price and rank; or miners whose name or description match some words. Free.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "Intent name; lists that intent's miners with their rank."
+          },
+          "search": {
+            "type": "string",
+            "description": "Words every listed miner must match (slug, name, description)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Most miners to return (default 20)."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_ranking",
+      "title": "Miner ranking",
+      "description": "The latest epoch's miner ranking (scores from the network's own checks), for one intent or the top few of every intent. Asks go to the top live miner. Free.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "description": "Intent name. Empty: every ranked intent."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Miners per intent (default 10 for one intent, 3 for all)."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_account",
+      "title": "Account",
+      "description": "This server's wallet (or any address): its address and network, wallet USDC and ETH, the Telegraph escrow balance that pays for asks (spendable, deposited, debt, pending withdrawal), the spending limits, and how to top up. Free.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address to look up. Default: this server's wallet."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_docs",
+      "title": "Telegraph docs",
+      "description": "How Telegraph works: getting started, payments, intents and ranking, errors. Free.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "getting-started",
+              "payments",
+              "intents-and-ranking",
+              "troubleshooting"
+            ],
+            "description": "A topic to read in full."
+          },
+          "search": {
+            "type": "string",
+            "description": "Words to look up across the docs."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "telegraph_deposit",
+      "title": "Deposit to escrow",
+      "description": "Move USDC from this server's wallet into its Telegraph escrow balance (approve, then depositUSDC on chain; needs a little ETH for gas). Escrow then pays for asks. Only offered when TELEGRAPH_ALLOW_AGENT_DEPOSIT is set; confirm the amount with the user first. Withdrawing is explained in telegraph_docs topic payments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "description": "USDC to deposit, e.g. 1 or 5."
+          }
+        },
+        "required": [
+          "amount_usd"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}
