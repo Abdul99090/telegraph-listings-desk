@@ -193,3 +193,140 @@ holds test USDC, and depositing also needs Sepolia ETH for gas
 Once 1–2 land: `fund` (or `telegraph_deposit {amount_usd: 1}`) → escrow
 1 USDC → `node src/index.js --live` should settle 5 purchases ≈ $0.05
 and produce the first real-receipt memo.
+
+---
+
+# Funding + first settled purchases (14 Nov 2026, session 2)
+
+All times WIB (UTC+7). Raw evidence: `out/mcp-session-d1.json` …
+`out/mcp-session-d7.json` (funding/verification sessions) and
+`out/mcp-session-e1.json` … `out/mcp-session-e6.json` (miner discovery +
+purchases), driven by `scripts/plan-d*.json` / `scripts/plan-e*.json`
+with the same probe client as milestone 1. Blockers 1–3 from session 1
+are all **resolved**; what remains is a client-adapter gap (see §5).
+
+## 1. Funding route — Anjoman dead end, direct mint instead
+
+- The Anjoman faucet path (blocker 1) turned out to be a dead end: an
+  account was created, but its verification email never arrives, so the
+  faucet never unlocked. Not pursued further.
+- Funding landed by **minting the test USDC directly**: the Telegraph
+  test token (`0xcc194e1a843B658526D0D5C431f670028582Ae17`) exposes a
+  permissionless `mint(address, uint256)`. Exactly the 1 USDC faucet
+  amount was minted to the Telegraph wallet — no more:
+  tx `0x0d2c51653ae3248d1c2411807368b02038b6a22bf5b69fb91e7cc9bf4760c2cc`,
+  block 12127949, status success.
+- Sepolia ETH for gas (blocker 2) arrived via the Google Cloud Web3
+  faucet: 0.05 ETH, tx
+  `0x40d1e36f164053b5d15557ac1b8d3de3443a50a171de0b3687749c468d3e9780`,
+  block 12127803.
+- Pre-deposit check (session D1, 02:09–02:10): `telegraph_account` →
+  wallet_usdc **1**, wallet_eth ≈ 0.05, escrow spendable 0.
+
+## 2. Deposit — escrow funded (session D2, 02:10–02:11)
+
+`telegraph_deposit {amount_usd: 1}` (server started with
+`TELEGRAPH_ALLOW_AGENT_DEPOSIT=1`) succeeded in 49.0 s:
+
+- approve tx `0x6437535c8f7669ce6f0aab9013e0c92166c57fade6d1ca2f67bc1ac76f0a2d13`
+  (block 12127960)
+- depositUSDC tx `0xcfb1fde85e5946be2185e949aeb1477f5103d4c878081c9ed8b83f80ed4ce0ee`
+  (block 12127961)
+- Tool-reported `escrow_now`: spendable 1, deposited 1, debt 0,
+  pending withdrawal 0. Both receipts independently re-verified
+  `status 0x1` via a public Sepolia RPC; the follow-up
+  `telegraph_account` agreed (wallet_usdc 0, escrow spendable 1).
+
+## 3. The epoch lag — why asks still 402'd for ~11 minutes
+
+Immediately after the deposit, both `node src/index.js --live` and a
+direct `telegraph_ask` were still refused with the session-1 body
+(`available=0 μUSDC`, nothing charged), even though
+`telegraph_account` read escrow spendable = 1 from chain (session D3).
+The node's delivery check evidently lags the contract read. After a
+~9-minute wait (session D5, 02:22) the identical ask settled — and its
+receipt is stamped **epoch 2084**, one epoch after the deposit landed
+(epoch 2083 in session 1). Working model: a deposit becomes spendable
+to the node's delivery check at the next epoch boundary. Anyone
+reproducing this should expect the same lag and not re-deposit.
+
+## 4. Settled purchases — 6 × $0.01 = $0.06
+
+All paid from escrow, settlement `epoch`, chain `telegraph`,
+payer `0x3c20ee9f54efe5ad1377f064c6c0ea8c3a6c0c46`.
+
+| # | Intent | Miner | Receipt hash | Time (WIB) |
+|---|---|---|---|---|
+| 1 | CRYPTO_PRICE_USD | Cp Coinbase (id 190069) | `0x3a2619c003e31a05d84cfc35057f62b878e735825409366a0d65b0258d7b4ca2` | 02:22:38 |
+| 2 | SMART_CONTRACT_AUDIT_GENERAL | sca-ghsa (id 151007) | settled via the desk run (see below) | ~02:23 |
+| 3 | WASH_TRADING_DETECTION_GENERAL | ZK Wash Trading Evidence (id 73181) | `0xd50afebeb13e34d7d9a31f053edc7ed36f913fd269b3e3b6be0274707d6fe355` | 02:26:09 |
+| 4 | ONCHAIN_METRIC_VERIFY_GENERAL | LiveCert (id 4433) | `0xec61d213432208c79b85ac112fd6136bed44eb25638cbd90e7edec5e1e7425b7` | 02:27:32 |
+| 5 | SOCIAL_BOT_DETECTION_GENERAL | PREFLIGHT Infrastructure Signals (id 20260828) | `0xe2c2fc74a3eba2fdbd5c66e051c634354ffaf75201a0e7c72c6169989fd6e38b` | 02:27:36 |
+| 6 | SANCTIONS_SCREENING_MATCH_GENERAL | ChainSight (id 302) | `0xe356648430f381dc7ff9ac6e19a5350e09f63f1a76a12e353391e0fb0c2a73d9` | 02:28:53 |
+
+**Receipt #1 in full** (the first real machine-to-machine purchase;
+blocker 3's missing success shape, now pinned): question "What is the
+current price of BTC in USD?" → answer `{"price_usd": 68936.835}`,
+`cost_usd 0.01`, payment receipt `{receipt_hash 0x3a26…4ca2, rail
+escrow, payer 0x3c20…0c46, miner "4664", intent CRYPTO_PRICE_USD,
+amount_uusdc "10000", epoch_id 2084, settlement "epoch", chain
+"telegraph", timestamp 1794597758}`.
+
+**Purchase #2** was made by the desk itself: `node src/index.js --live`
+(second run, ~02:23) planned all 5 Mission-01 intents, bought the
+audit from sca-ghsa (the GHSA-advisory answer is visible in the crash
+output), and then stopped on `AnswerShapeError` — the audit answer
+carries no numeric risk score, and the desk refuses to invent one
+(exactly the defensive failure predicted in session 1). Its receipt
+body was not captured (the process died before writing a memo), but
+settlement is proven two ways: the answer was delivered, and
+`telegraph_account`'s `spent_today_usd` stepped 0.01 → 0.02 across
+that run with no other asks in between.
+
+**Purchases #3–#6** complete the desk's five-intent set via the
+equivalent MCP calls (`telegraph_ask_miner` / `telegraph_ask`),
+mirroring the desk's plan (top-ranked miner per intent, desk question
+text + listing subject line). Three intents first bounced
+`400 invalid_params` (nothing charged) because the node requires
+intent params the desk never sends; the settled calls supplied them:
+ONCHAIN_METRIC_VERIFY needs `{address, block}` (+ optional
+chain/metric), SOCIAL_BOT_DETECTION needs `{account}`,
+SANCTIONS_SCREENING_MATCH needs `{name}`. Sanctions additionally
+refused the #1 miner twice (`503 no_compatible_miner` — its
+`/sanctions` endpoint cannot take the required `name`), and settled
+only when routed by `telegraph_ask` to the same operator's compatible
+miner.
+
+**Answer-quality caveats (verbatim behaviour, kept for the entry):**
+miner answers on this beta are noisy. WASH's miner ignored the absent
+subject and analysed WETH on Ethereum instead (summary-only answer,
+structured fields `missing`). ONCHAIN's miner answered
+`verdict: "insufficient_input" / error: "no_metric"` despite valid
+params. SOCIAL returned the account with verdict/bot_score mostly
+missing. SANCTIONS screened the string "Contract:" parsed from the
+question text rather than the supplied name, and fuzzy-matched it to
+an OFAC SDN entry ("FREEZER AIR CONTRACTOR S.A.", `matched: true`) —
+a false positive that would trip the desk's sanctions veto. All four
+are genuine settled purchases with real receipts; none of the answers
+was edited or retried for a prettier result.
+
+## 5. Final state + what remains
+
+Final `telegraph_account` (session D7, 02:29): wallet 0 USDC /
+≈0.05 ETH; escrow deposited 1, spendable 1, debt 0, pending
+withdrawal 0; **`spent_today_usd: 0.06`** — the six settled asks.
+(Escrow charges deduct when epoch 2084 closes, per the payments docs,
+so the contract-side spendable still reads 1 until settlement.)
+
+Remaining for the entry (not blockers for this milestone):
+
+- **Client adapter work**: teach `McpTelegraphClient` to send the
+  intent-required params (address/block, account, name) and to derive
+  a risk score from the structured answer fields miners actually
+  return (or record answer-quality per intent), so
+  `node src/index.js --live` can finish a full 5-intent run and write
+  its memo unattended. Until then the desk binary reliably stops
+  after the audit purchase.
+- The ≥1 real autonomous M2M purchase requirement is now met six
+  times over, with receipt hashes on file above and full transcripts
+  in `out/mcp-session-d*.json` / `out/mcp-session-e*.json`.

@@ -1,0 +1,1 @@
+{"steps":[{"arguments":{"intent":"ONCHAIN_METRIC_VERIFY_GENERAL"},"tool":"telegraph_intent"},{"arguments":{"intent":"SOCIAL_BOT_DETECTION_GENERAL"},"tool":"telegraph_intent"},{"arguments":{"intent":"SANCTIONS_SCREENING_MATCH_GENERAL"},"tool":"telegraph_intent"},{"arguments":{"intent":"WASH_TRADING_DETECTION_GENERAL"},"tool":"telegraph_intent"}]}

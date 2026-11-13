@@ -1,0 +1,1 @@
+{"steps":[{"arguments":{"intent":"SANCTIONS_SCREENING_MATCH_GENERAL","params":{"name":"MoonPanda Inu"},"question":"Screen the deployer and known counterparty addresses against OFAC, EU and UN consolidated sanctions lists. Contract: 0x0000000000000000000000000000000000rug001. Chain: bsc. Deployer: 0x000000000000000000000000000000000000dead"},"tool":"telegraph_ask"}]}

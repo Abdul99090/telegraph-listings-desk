@@ -1,0 +1,1 @@
+{"env":{"TELEGRAPH_ALLOW_AGENT_DEPOSIT":"1"},"steps":[{"arguments":{},"tool":"telegraph_account"},{"arguments":{"intent":"CRYPTO_PRICE_USD","question":"What is the current price of BTC in USD?"},"tool":"telegraph_ask"}]}

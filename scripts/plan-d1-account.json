@@ -1,0 +1,1 @@
+{"env":{"TELEGRAPH_ALLOW_AGENT_DEPOSIT":"1"},"steps":[{"tool":"tools/list"},{"arguments":{},"tool":"telegraph_account"}]}
