@@ -32,7 +32,7 @@ itself is a deliberate final step — see "Remaining steps" at the end.
 | Mission | Mission 01: Exchange |
 | Team / contact | bejo (solo) · kemzie797b@gmail.com · Discord Timferris#0 |
 | GitHub username that starred the bounties repo | **Abdul99090** (starred github.com/telegraphprotocol/bounties — required entry element, done) |
-| Reviewer-access link | ⚠ PENDING — the code repo is currently a local git repo with no remote. Push it public (GitHub, under Abdul99090) and paste the URL here before submitting. |
+| Reviewer-access link | https://github.com/Abdul99090/telegraph-listings-desk (public, pushed 14 Nov 2026) |
 | Working demo | `node src/index.js --live` from the repo (see How to run) |
 | Payout wallet (on file, per entrant instruction 14 Nov 2026) | `0x06994C22E239f4d97661de1A72ee1C0bB18350AD` (burner wallet) |
 | Telegraph wallet (evidence, testnet) | `0x3C20EE9f54Efe5Ad1377f064c6C0EA8C3a6c0C46` (Ethereum Sepolia) |
@@ -53,9 +53,9 @@ SOCIAL_BOT_DETECTION, SANCTIONS_SCREENING_MATCH).
   receipts on screen) → memo with verdict + cost line →
   `telegraph_account` after (`spent_today` $0.13 → $0.18) → receipt
   recap. Testnet only, stated on screen.
-- ⚠ PENDING — the form needs an accessible video link: upload
-  `video/demo.mp4` (e.g. as a GitHub Release asset on the public
-  repo, or YouTube) and paste the URL here before submitting.
+- Public video link: **https://github.com/Abdul99090/telegraph-listings-desk/releases/download/demo-v1/demo.mp4**
+  (GitHub Release `demo-v1` on the public repo, asset uploaded 14 Nov
+  2026, 1,223,457 bytes, verified reachable without login).
 - Reproduce the recording: `bash scripts/demo-session.sh` (live),
   then `python3 scripts/render-demo-video.py`.
 
@@ -198,11 +198,11 @@ All results are testnet; no customer demand is claimed.
 
 ## Remaining steps before the entry can be submitted
 
-1. **Push this repo public** (GitHub, account Abdul99090) and fill
-   the reviewer-access link in block 1. (Commits are local; no
-   remote is configured yet.)
-2. **Host the demo video** at a public URL (GitHub Release asset or
-   YouTube) and fill the link in block 2.
+1. ✅ DONE (14 Nov 2026) — Repo pushed public:
+   https://github.com/Abdul99090/telegraph-listings-desk — reviewer
+   link filled in block 1.
+2. ✅ DONE (14 Nov 2026) — Demo video hosted as a GitHub Release
+   asset (tag `demo-v1`) on the public repo — link filled in block 2.
 3. **Publish the ≥3 public updates** on separate dates and fill
    their links in block 5. (20 of 100 judging points.)
 4. Confirm the showcase-permission wording (block 7) and the payout
