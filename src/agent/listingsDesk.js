@@ -38,33 +38,68 @@ export class ListingsDesk {
     if (planned > this.maxSpendPerRun) throw new SpendCeilingError(planned, this.maxSpendPerRun);
 
     // 3. Buy the intelligence — one paid request per Intent.
+    //    A single miner failing (a 400/503 for that miner, an answer
+    //    with no derivable score) must not kill the run: the failure
+    //    is recorded in the memo and the remaining intents complete.
+    //    The one exception is PaymentRequiredError — an escrow that
+    //    cannot pay means nothing can settle, so the run stops and
+    //    the caller sees the node's exact refusal.
     const results = [];
     for (const { spec, miner } of plan) {
-      const result = await this.client.askMiner(spec.name, miner.minerId, {
-        question: spec.question,
-        subject: {
-          contractAddress: application.contractAddress,
-          chain: application.chain,
-          deployer: application.deployer,
-        },
-        metadata: application.metadata,
-      });
-      result.weight = spec.weight;
-      results.push(result);
+      try {
+        const result = await this.client.askMiner(spec.name, miner.minerId, {
+          question: spec.question,
+          subject: {
+            contractAddress: application.contractAddress,
+            chain: application.chain,
+            deployer: application.deployer,
+            tokenName: application.tokenName,
+            tokenSymbol: application.tokenSymbol,
+          },
+          metadata: application.metadata,
+        });
+        result.weight = spec.weight;
+        results.push(result);
+      } catch (err) {
+        if (err?.name === "PaymentRequiredError") throw err;
+        results.push({
+          intent: spec.name,
+          minerId: miner.minerId,
+          weight: spec.weight,
+          failed: true,
+          answer: {
+            riskScore: null,
+            scored: false,
+            findings: [`Purchase failed: ${err.message}`],
+            raw: null,
+          },
+          receipt: { id: null, network: this.client.network ?? "unknown" },
+          cost: 0,
+        });
+      }
     }
 
-    // 4. Decide. Hard vetoes first: a sanctions match, or a critical-grade
-    //    audit risk, rejects regardless of the weighted average.
+    // 4. Decide. Only SCORED answers feed the numbers: an intent whose
+    //    miner returned no derivable score is recorded as unscored —
+    //    it is not silently treated as zero risk. Hard vetoes first: a
+    //    sanctions match, or a critical-grade audit risk, rejects
+    //    regardless of the weighted average. With zero scored answers
+    //    the desk never auto-clears a listing: REVIEW.
+    const scored = results.filter((r) => typeof r.answer?.riskScore === "number");
     const byIntent = Object.fromEntries(results.map((r) => [r.intent, r]));
     const weightedRisk =
-      results.reduce((sum, r) => sum + r.answer.riskScore * r.weight, 0) /
-      results.reduce((sum, r) => sum + r.weight, 0);
+      scored.length > 0
+        ? scored.reduce((sum, r) => sum + r.answer.riskScore * r.weight, 0) /
+          scored.reduce((sum, r) => sum + r.weight, 0)
+        : null;
     let verdict;
     if (
-      byIntent.SANCTIONS_SCREENING_MATCH.answer.riskScore >= 90 ||
-      byIntent.SMART_CONTRACT_AUDIT.answer.riskScore >= 85
+      (byIntent.SANCTIONS_SCREENING_MATCH?.answer.riskScore ?? -1) >= 90 ||
+      (byIntent.SMART_CONTRACT_AUDIT?.answer.riskScore ?? -1) >= 85
     ) {
       verdict = "REJECT";
+    } else if (weightedRisk === null) {
+      verdict = "REVIEW";
     } else {
       verdict = weightedRisk >= 45 ? "REJECT" : weightedRisk >= 25 ? "REVIEW" : "LIST";
     }

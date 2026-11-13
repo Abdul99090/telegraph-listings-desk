@@ -47,4 +47,14 @@ await mkdir(join(here, "..", "out"), { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 await writeFile(join(here, "..", "out", `memo-${stamp}.json`), JSON.stringify(outcome.memo, null, 2));
 await writeFile(join(here, "..", "out", `memo-${stamp}.md`), outcome.markdown);
-console.log(`\nMemo written to out/memo-${stamp}.{json,md}`);
+// Full evidence for the run: every result with its raw miner answer
+// and raw receipt body — the file a reviewer inspects alongside the memo.
+await writeFile(
+  join(here, "..", "out", `run-${stamp}.json`),
+  JSON.stringify({ application, results: outcome.results }, null, 2),
+);
+console.log(`\nMemo written to out/memo-${stamp}.{json,md}; full run evidence in out/run-${stamp}.json`);
+
+// The live client holds a spawned MCP server process; close it or
+// this process never exits after a successful run.
+await client.close?.();

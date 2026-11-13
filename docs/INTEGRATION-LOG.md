@@ -330,3 +330,100 @@ Remaining for the entry (not blockers for this milestone):
 - The ≥1 real autonomous M2M purchase requirement is now met six
   times over, with receipt hashes on file above and full transcripts
   in `out/mcp-session-d*.json` / `out/mcp-session-e*.json`.
+
+---
+
+# Client adapter + demo + entry prep (14 Nov 2026, session 3)
+
+All times WIB (UTC+7). Raw evidence: `out/mcp-session-f1-account.json`
+(account state), `out/mcp-session-f2-shapes.json` (answer-shape
+probes), `out/memo-2026-11-13T19-56-29-492Z.*` + `out/run-*.json`
+(adapter verification run), `out/memo-2026-11-13T20-08-03-089Z.*`
+(recorded demo run), `video/demo.typescript` + `video/demo.timing`
+(the recorded session), `video/demo.mp4` (the rendered demo).
+
+## 1. Adapter work (session 2 §5's remaining item — done)
+
+`src/telegraph/client.js`:
+
+- **Intent params supplied** (`defaultIntentParams`, shapes from
+  session E3): ONCHAIN `{address: deployer, block: <latest Ethereum
+  block via public RPC>, chain: "ethereum", metric: "balance"}`,
+  WASH `{subject: contract}`, SOCIAL `{account: metadata.socialAccount
+  ?? token name squished}`, SANCTIONS `{name: token name}`. AUDIT
+  takes none.
+- **503 fallback**: a `no_compatible_miner` refusal from
+  `telegraph_ask_miner` (the chainsight-oracle case, E4/E5) retries
+  the same ask through node-routed `telegraph_ask` — the route that
+  settled E6.
+- **Scores derived, not invented** (`deriveRiskScore`): explicit
+  risk fields → sanctions `matched` fact (true ⇒ 100, false ⇒
+  match_score × 100 or 0) → documented 0–1 fractions (`bot_score`,
+  `match_score`) → `wash_volume_pct` → severity-weighted findings →
+  (WASH only) the score the miner states in its own summary prose.
+  Everything else returns **unscored**: the purchase settles, the raw
+  answer is recorded, the desk aggregates over scored intents only
+  and never auto-LISTs on zero scored answers (REVIEW instead).
+  `AnswerShapeError` remains available via `strictScores: true`.
+- **Real receipt/cost fields pinned**: receipt id now reads
+  `payment.receipt.receipt_hash`; cost reads `cost_usd` first.
+- **Findings extraction** speaks the real shapes: the GHSA list
+  (count + first CVE/CVSS, labelled an advisory feed), sanctions
+  match/no-match lines, prose fallbacks that name the fields received.
+
+`src/agent/listingsDesk.js`: a single intent failing (400/503) is
+recorded in the memo and the run continues; only
+`PaymentRequiredError` aborts. Subject now carries tokenName/Symbol
+(the params need them). `src/memo.js`: unscored intents render as
+"unscored", live cost unit is "USD (testnet USDC)". `src/index.js`
+now writes `out/run-<stamp>.json` (full results incl. raw answers)
+and **closes the MCP client** — before this, a successful live run
+never exited (the spawned server held the event loop; earlier runs
+only ever exited by crashing). Tests: 11 passing (4 original + 7 new
+in `test/adapter.test.js`).
+
+## 2. Answer shapes pinned (session F2, 2 asks, $0.02)
+
+- **AUDIT (sca-ghsa)**: the answer is a bare **array of GitHub
+  advisory records** (100 in the demo run; first CVE-2026-128077,
+  CVSS 6.5) — other software's CVEs, not an audit of the subject.
+  Correctly unscored; the memo says so in those words.
+- **SOCIAL (a1-preflight)**: `{account, verdict: null, bot_score:
+  null, signals: null}` again — no usable signal; unscored.
+
+## 3. Two full unattended desk runs (5 asks each, $0.05 each)
+
+- **Verification run** (~02:56 WIB): verdict **REJECT**, weighted
+  risk 77.3 over the scored subset (WASH 66 via miner-stated summary
+  score; SANCTIONS 100 — `matched: true`, the same fuzzy-match
+  behaviour noted in session 2, now surfaced as an explicit memo
+  finding). Receipts: audit `0xdc7e4df1…b394`, onchain
+  `0xc57f8c39…324b`, wash `0x92b14acb…6028`, social `0x80c6d07d…7bd0`,
+  sanctions `0x3dcac1b8…2b9e5`.
+- **Recorded demo run** (~03:08 WIB): verdict **REJECT**, weighted
+  76.7 (WASH 65, SANCTIONS 100). `spent_today_usd` moved
+  $0.13 → $0.18 on camera. Receipts in `ENTRY-PAYLOAD.md` §4.
+
+Day total: **18 settled asks, $0.18** (6 session-2 + 2 probes + 10 in
+the two full runs). Escrow: deposited 1, effective remaining ≈ $0.82.
+
+## 4. Demo video
+
+`video/demo.mp4` — 2 min 30 s, 1600×900, H.264 + silent AAC. It is a
+rendering of a real `script` typescript of `scripts/demo-session.sh`
+→ `scripts/demo-live.mjs` (product code paths, live network): title
+card → account before → desk run with the memo and receipts on
+screen → account after → receipt recap → end card. Rendering
+(`scripts/render-demo-video.py`) changes pacing only (0.45× slow-down
+to reach the 2-minute floor), never the text. Re-record any time with
+the same two commands (≈ $0.05 of escrow per take).
+
+## 5. Entry prep
+
+`ENTRY-PAYLOAD.md` holds the copy-ready final entry (all six Rules
+§8 blocks + the commercial-summary answers) and the exact channel:
+**the H2 website, signed in as the registered participant, final
+entry form, by 1 Dec 2026 23:59 UTC (2 Dec 06:59 WIB)**. Not
+submitted. Remaining before it can be: push this repo public (no
+remote yet), host the video at a public URL, publish ≥3 public
+updates on separate dates, confirm showcase permission.

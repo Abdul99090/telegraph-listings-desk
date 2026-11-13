@@ -29,6 +29,21 @@
  * - An ask the escrow cannot cover is NOT a tool error: it returns a
  *   normal result whose JSON body has status 402 ("payment required").
  *   McpTelegraphClient surfaces that as PaymentRequiredError.
+ * - Three of the desk's intents REQUIRE params (telegraph_intent;
+ *   sessions E2/E3): ONCHAIN_METRIC_VERIFY_GENERAL needs
+ *   { address, block } (+ chain/metric), SOCIAL_BOT_DETECTION_GENERAL
+ *   needs { account }, SANCTIONS_SCREENING_MATCH_GENERAL needs
+ *   { name }, WASH_TRADING_DETECTION_GENERAL takes { subject }.
+ *   defaultIntentParams() builds them from the listing subject.
+ * - A miner can refuse the params it is handed: the #1 sanctions
+ *   miner answered 503 no_compatible_miner to ask_miner with `name`
+ *   (sessions E4/E5); the node-routed telegraph_ask settled the same
+ *   screening (session E6). askMiner falls back accordingly.
+ * - Settled answers carry intent-shaped fields, not a uniform risk
+ *   score (sessions E2/E4/E6). deriveRiskScore() maps ONLY what the
+ *   miner itself returned onto 0–100; when nothing is derivable the
+ *   answer is reported unscored instead of aborting the desk run
+ *   (the session-2 AnswerShapeError behaviour) — see askMiner.
  *
  * SimulatedTelegraphClient provides deterministic offline Providers so
  * the desk logic, memo and tests run end-to-end without the network.
@@ -82,6 +97,29 @@ export class AnswerShapeError extends Error {
 }
 
 /**
+ * Parse the JSON body a TelegraphToolError carries, when it has one.
+ * The node reports protocol-level refusals (400 invalid_params,
+ * 503 no_compatible_miner) as an isError result whose text IS the
+ * JSON body; callTool surfaces those as TelegraphToolError.
+ */
+export function parseToolErrorBody(err) {
+  const text = err?.text ?? err?.message ?? "";
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf("{");
+    if (start >= 0) {
+      try {
+        return JSON.parse(text.slice(start));
+      } catch {
+        /* not a JSON body */
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Mission 01 catalogue name -> live beta-2 intent name.
  * Verified 14 Nov 2026 via telegraph_find_intents (136 intents).
  */
@@ -116,7 +154,7 @@ export class SpendCeilingError extends Error {
  * operations onto the verified tool schemas (docs/MCP-TOOLS.md).
  */
 export class McpTelegraphClient {
-  constructor({ home, env = {} } = {}) {
+  constructor({ home, env = {}, strictScores = false, ethRpcUrls } = {}) {
     const telegraphHome =
       home ?? env.TELEGRAPH_HOME ?? process.env.TELEGRAPH_HOME ?? join(homedir(), ".telegraph");
     if (!env.TELEGRAPH_PRIVATE_KEY && !process.env.TELEGRAPH_PRIVATE_KEY) {
@@ -124,6 +162,17 @@ export class McpTelegraphClient {
     }
     this.telegraphHome = telegraphHome;
     this.extraEnv = env;
+    // strictScores: true restores the pre-adapter behaviour of
+    // throwing AnswerShapeError when a settled answer carries no
+    // derivable risk score. Default false: the answer is returned
+    // unscored and the desk decides with the intents that did score.
+    this.strictScores = strictScores;
+    this.ethRpcUrls = ethRpcUrls ?? [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.llamarpc.com",
+      "https://cloudflare-eth.com",
+    ];
+    this._ethBlock = undefined;
     this.network = "telegraph-testnet";
     this._child = null;
     this._ready = null;
@@ -257,11 +306,16 @@ export class McpTelegraphClient {
 
   /**
    * The paid machine-to-machine request. Returns
-   * { intent, liveIntent, minerId, answer, receipt, cost }.
+   * { intent, liveIntent, minerId, servedBy, answer, receipt, cost }
+   * with answer = { riskScore, scored, scoreSource, findings, raw }.
+   *
    * Throws PaymentRequiredError when the escrow cannot cover the ask
-   * (the server reports that as a 402 body, not a tool error), and
-   * AnswerShapeError when a successful answer carries no usable risk
-   * score — the desk never runs on an invented number.
+   * (the server reports that as a 402 body, not a tool error). A
+   * settled answer with no derivable risk score does NOT abort the
+   * caller: it returns riskScore null + scored false, with the raw
+   * answer attached, so the desk can finish the run and show the
+   * evidence as-is (Rules §5: accurate claims). With
+   * strictScores: true the old AnswerShapeError throw is restored.
    */
   async askMiner(intent, minerId, payload = {}) {
     const live = toLiveIntent(intent);
@@ -276,29 +330,104 @@ export class McpTelegraphClient {
     const question = [payload.question ?? `Evaluate this listing subject for intent ${live}.`, subjectLine]
       .filter(Boolean)
       .join(" ");
+    const params =
+      payload.params ?? (await this.defaultParams(live, subject, payload.metadata ?? {}));
     const args = { miner: minerId, intent: live, question };
-    if (payload.params) args.params = payload.params;
-    const r = await this.callTool("telegraph_ask_miner", args);
+    if (params && Object.keys(params).length > 0) args.params = params;
+
+    let r;
+    try {
+      r = await this.callTool("telegraph_ask_miner", args);
+    } catch (err) {
+      // Observed live 14 Nov 2026 (sessions E4/E5): the #1 sanctions
+      // miner cannot accept the intent's required `name` param — the
+      // node answers 503 no_compatible_miner and its own hint says to
+      // use telegraph_ask. The node-routed ask settled that exact
+      // case (session E6), so fall back to it instead of failing.
+      const body = parseToolErrorBody(err);
+      if (body?.status === 503 && body?.error === "no_compatible_miner") {
+        const askArgs = { intent: live, question };
+        if (params && Object.keys(params).length > 0) askArgs.params = params;
+        r = await this.callTool("telegraph_ask", askArgs);
+      } else {
+        throw err;
+      }
+    }
     if (r && typeof r === "object" && r.status === 402) throw new PaymentRequiredError(r);
 
     const raw = r?.answer ?? r;
-    const riskScore = pickRiskScore(raw);
-    if (riskScore === null) throw new AnswerShapeError(intent, raw);
+    const derived = deriveRiskScore(intent, raw);
+    if (!derived.scored && this.strictScores) throw new AnswerShapeError(intent, raw);
     const findings = pickFindings(raw);
     const cost =
-      r?.payment?.price_usd ?? r?.cost ?? r?.price_usd ?? this._prices.get(live)?.get(minerId) ?? null;
+      r?.cost_usd ??
+      r?.payment?.price_usd ??
+      r?.cost ??
+      r?.price_usd ??
+      this._prices.get(live)?.get(minerId) ??
+      null;
+    const receiptHash =
+      r?.payment?.receipt?.receipt_hash ??
+      r?.receipt?.receipt_hash ??
+      r?.receipt?.id ??
+      r?.receipt_id ??
+      r?.id ??
+      null;
     return {
       intent,
       liveIntent: live,
       minerId,
-      answer: { riskScore, findings, raw },
+      servedBy: typeof r?.miner === "string" ? r.miner : null,
+      answer: {
+        riskScore: derived.riskScore,
+        scored: derived.scored,
+        scoreSource: derived.source,
+        findings,
+        raw,
+      },
       receipt: {
-        id: r?.receipt?.id ?? r?.receipt_id ?? r?.id ?? null,
+        id: receiptHash,
         network: this.network,
         raw: r,
       },
       cost,
     };
+  }
+
+  /**
+   * Params for a live intent, built from the listing subject (see
+   * defaultIntentParams). ONCHAIN_METRIC_VERIFY_GENERAL also needs a
+   * current Ethereum block number, fetched once from a public RPC.
+   */
+  async defaultParams(liveIntent, subject = {}, metadata = {}) {
+    const block =
+      liveIntent === "ONCHAIN_METRIC_VERIFY_GENERAL" ? await this._latestEthBlock() : null;
+    return defaultIntentParams(liveIntent, subject, metadata, block);
+  }
+
+  /** Latest Ethereum mainnet block from a public RPC, or null. */
+  async _latestEthBlock() {
+    if (this._ethBlock !== undefined) return this._ethBlock;
+    for (const url of this.ethRpcUrls) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const body = await res.json();
+        const n = Number.parseInt(body?.result, 16);
+        if (Number.isFinite(n) && n > 0) {
+          this._ethBlock = n;
+          return n;
+        }
+      } catch {
+        /* try the next RPC */
+      }
+    }
+    this._ethBlock = null;
+    return null;
   }
 
   async account() {
@@ -317,20 +446,182 @@ export class McpTelegraphClient {
   }
 }
 
-function pickRiskScore(raw) {
-  if (!raw || typeof raw !== "object") return null;
+/**
+ * Params the live intents require, built from the listing subject.
+ * Shapes verified via telegraph_intent on 14 Nov 2026 (session E3);
+ * asks without them bounce 400 invalid_params, uncharged (E2).
+ * `ethBlock` is only used by ONCHAIN_METRIC_VERIFY_GENERAL; when it
+ * is null the params come back empty and that ask will fail loudly
+ * (recorded by the desk) rather than guess a block.
+ */
+export function defaultIntentParams(liveIntent, subject = {}, metadata = {}, ethBlock = null) {
+  switch (liveIntent) {
+    case "ONCHAIN_METRIC_VERIFY_GENERAL": {
+      // The intent reads an address's native balance / tx count at a
+      // stated block, and only on ethereum | polygon | arbitrum.
+      // Desk subjects live elsewhere (the sample is BSC), so — exactly
+      // as manual session E4 did — it reads the DEPLOYER on Ethereum.
+      if (ethBlock === null || !(subject.deployer ?? subject.contractAddress)) return {};
+      return {
+        address: subject.deployer ?? subject.contractAddress,
+        block: ethBlock,
+        chain: "ethereum",
+        metric: "balance",
+      };
+    }
+    case "WASH_TRADING_DETECTION_GENERAL":
+      return subject.contractAddress ? { subject: subject.contractAddress } : {};
+    case "SOCIAL_BOT_DETECTION_GENERAL": {
+      const account =
+        metadata.socialAccount ??
+        (subject.tokenName ? subject.tokenName.replace(/\s+/g, "") : null) ??
+        subject.tokenSymbol ??
+        null;
+      return account ? { account } : {};
+    }
+    case "SANCTIONS_SCREENING_MATCH_GENERAL": {
+      const name = subject.tokenName ?? subject.deployer ?? subject.contractAddress;
+      return name ? { name } : {};
+    }
+    default:
+      // SMART_CONTRACT_AUDIT_GENERAL takes no params (params: []).
+      return {};
+  }
+}
+
+/**
+ * Derive a 0–100 risk score from a settled miner answer — ONLY from
+ * numbers and facts the miner itself returned, following the
+ * answer_fields telegraph_intent documents for each intent
+ * (14 Nov 2026). Returns { riskScore, scored, source }; when nothing
+ * is derivable, scored is false and the desk records the intent as
+ * unscored instead of running on an invented number (Rules §5).
+ */
+export function deriveRiskScore(intent, raw) {
+  const unscored = (why) => ({ riskScore: null, scored: false, source: why });
+  if (!raw || typeof raw !== "object") return unscored("answer is not an object");
+  // The GHSA audit miner returns a bare LIST of advisory records
+  // (session F2) — other software's CVEs, not a verdict on the
+  // subject. No honest single score exists; report it unscored.
+  if (Array.isArray(raw)) return unscored("answer is a list of records, not a scored verdict");
+
+  // 1. An explicit 0–100 risk field, any common spelling.
   for (const key of ["riskScore", "risk_score", "risk"]) {
     const v = raw[key];
-    if (typeof v === "number" && v >= 0 && v <= 100) return v;
+    if (typeof v === "number" && v >= 0 && v <= 100)
+      return { riskScore: v, scored: true, source: key };
   }
-  return null;
+  // 2. Sanctions: `matched` is a fact, not an estimate. A match is a
+  //    hard veto at the desk, so it maps to 100; no match maps to the
+  //    miner's own fuzzy score, or 0 — the screening came back clear.
+  if (typeof raw.matched === "boolean") {
+    if (raw.matched) return { riskScore: 100, scored: true, source: "matched=true" };
+    if (typeof raw.match_score === "number" && raw.match_score >= 0 && raw.match_score <= 1)
+      return {
+        riskScore: Math.round(raw.match_score * 100),
+        scored: true,
+        source: "match_score (matched=false)",
+      };
+    return { riskScore: 0, scored: true, source: "matched=false" };
+  }
+  // 3. Documented 0–1 fraction fields (SOCIAL bot_score, SANCTIONS
+  //    match_score when `matched` itself is absent).
+  for (const key of ["bot_score", "match_score"]) {
+    const v = raw[key];
+    if (typeof v === "number" && v >= 0 && v <= 1)
+      return { riskScore: Math.round(v * 100), scored: true, source: key };
+  }
+  // 4. Wash trading: the answer's own wash-volume percentage.
+  if (
+    typeof raw.wash_volume_pct === "number" &&
+    raw.wash_volume_pct >= 0 &&
+    raw.wash_volume_pct <= 100
+  )
+    return { riskScore: raw.wash_volume_pct, scored: true, source: "wash_volume_pct" };
+  // 5. Audit-style severity evidence: findings/advisories carrying
+  //    severities, or top-level severity counts.
+  const sev = severityScore(raw);
+  if (sev !== null) return { riskScore: sev, scored: true, source: "severity-weighted findings" };
+  // 6. Last resort, WASH only: the score the miner states in its own
+  //    summary prose — observed live in session E2: "ELEVATED
+  //    wash-trading risk (score 0.53)". Only that exact phrasing.
+  if (intent === "WASH_TRADING_DETECTION" || intent === "WASH_TRADING_DETECTION_GENERAL") {
+    const m =
+      typeof raw.summary === "string"
+        ? raw.summary.match(/\(score\s+(0(?:\.\d+)?|1(?:\.0+)?)\)/i)
+        : null;
+    if (m)
+      return {
+        riskScore: Math.round(Number(m[1]) * 100),
+        scored: true,
+        source: "miner-stated score in summary",
+      };
+  }
+  return unscored("no derivable risk field in answer");
+}
+
+const SEVERITY_WEIGHTS = { critical: 45, high: 25, medium: 10, moderate: 10, low: 3 };
+
+/** Severity-weighted score from an answer's own severity evidence, or null. */
+function severityScore(raw) {
+  let total = 0;
+  let found = false;
+  const addWord = (w) => {
+    const k = String(w).toLowerCase();
+    if (k in SEVERITY_WEIGHTS) {
+      total += SEVERITY_WEIGHTS[k];
+      found = true;
+    }
+  };
+  for (const k of Object.keys(SEVERITY_WEIGHTS)) {
+    if (typeof raw[k] === "number" && raw[k] > 0) {
+      total += SEVERITY_WEIGHTS[k] * raw[k];
+      found = true;
+    }
+  }
+  for (const key of ["findings", "advisories", "vulnerabilities", "issues"]) {
+    const arr = raw[key];
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (item && typeof item === "object" && item.severity) addWord(item.severity);
+      else if (typeof item === "string") {
+        const m = item.match(/^\s*(critical|high|medium|moderate|low)\b/i);
+        if (m) addWord(m[1]);
+      }
+    }
+  }
+  return found ? Math.min(100, total) : null;
 }
 
 function pickFindings(raw) {
-  if (Array.isArray(raw?.findings)) return raw.findings.map(String);
+  if (Array.isArray(raw)) {
+    // The GHSA audit miner returns a bare list of GitHub advisories.
+    if (raw.length === 0) return ["Miner returned an empty list."];
+    const first = raw[0] ?? {};
+    const id = first.cve_id ?? first.ghsa_id ?? first.id ?? "advisory";
+    const cvss = first.cvss?.score ?? first.cvss_severities?.cvss_v3?.score;
+    return [
+      `Miner returned ${raw.length} advisory record(s) (first: ${id}` +
+        `${typeof cvss === "number" ? `, CVSS ${cvss}` : ""}) — an advisory feed, not a contract-specific audit.`,
+    ];
+  }
+  if (Array.isArray(raw?.findings))
+    return raw.findings.map((f) => (typeof f === "string" ? f : JSON.stringify(f)));
   if (typeof raw?.findings === "string") return [raw.findings];
+  if (typeof raw?.matched === "boolean") {
+    return raw.matched
+      ? [
+          `SANCTIONS MATCH: ${(raw.matches ?? []).join(", ") || "matched a sanctions list"} ` +
+            `(lists: ${(raw.lists ?? []).join(", ") || "n/a"}).`,
+        ]
+      : [`No sanctions-list match (lists checked: ${(raw.lists ?? []).join(", ") || "n/a"}).`];
+  }
   if (typeof raw?.summary === "string") return [raw.summary];
+  if (typeof raw?.answer === "string") return [raw.answer];
+  if (typeof raw?.reason === "string") return [raw.reason];
   if (typeof raw?.verdict === "string") return [raw.verdict];
+  if (raw && typeof raw === "object" && Object.keys(raw).length > 0)
+    return [`Miner answer carried no findings text (fields: ${Object.keys(raw).join(", ")}).`];
   return ["Miner returned no findings text."];
 }
 

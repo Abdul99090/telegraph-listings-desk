@@ -1,0 +1,87 @@
+Script started on 2026-11-13 20:07:02+00:00 [COMMAND="bash scripts/demo-session.sh" <not executed on terminal>]
+================================================================================
+  TELEGRAPH LISTINGS DESK - LIVE DEMO
+  Telegraph Hackathon Season II - Track 03 (Apps & Agents) - Mission 01: Exchange
+
+  An autonomous agent buys the intelligence a listing decision needs -
+  contract audit, on-chain verification, wash-trading detection, social
+  bot detection, sanctions screening - through Telegraph, pays for it
+  from escrow with real receipts, and returns a signed-hash risk memo.
+
+  Network: Telegraph testnet (beta 2, Ethereum Sepolia). This is a real
+  terminal session: real MCP server, real escrow, real settled receipts.
+================================================================================
+
+--- telegraph_account (BEFORE the run) ---
+wallet        : 0x3C20EE9f54Efe5Ad1377f064c6C0EA8C3a6c0C46
+network       : eip155:11155111 (Ethereum Sepolia, Telegraph beta 2)
+wallet USDC   : 0   wallet ETH: 0.04999999998955356
+escrow        : spendable 1 / deposited 1 / debt 0
+limits        : max $0.5/ask, $5/day, spent today $0.13
+
+--- Listing application received ---
+MoonPanda Inu (MPAND) · contract 0x0000000000000000000000000000000000rug001 · chain bsc · deployer 0x000000000000000000000000000000000000dead
+The desk now plans from live rankings and buys five intents. Watch the receipts.
+
+# Listing risk memo — MoonPanda Inu (MPAND)
+
+- Contract: 0x0000000000000000000000000000000000rug001 on bsc
+- Deployer: 0x000000000000000000000000000000000000dead
+- Verdict: **REJECT** (weighted risk 76.7/100)
+- Network evidence: telegraph-testnet
+
+## Intelligence bought
+
+### SMART_CONTRACT_AUDIT — unscored (miner answer carried no derivable risk score)
+- Miner: sca-ghsa
+- Miner returned 100 advisory record(s) (first: CVE-2026-128077, CVSS 6.5) — an advisory feed, not a contract-specific audit.
+
+### ONCHAIN_METRIC_VERIFY — unscored (miner answer carried no derivable risk score)
+- Miner: livecert
+- No readable on-chain value was named.
+
+### WASH_TRADING_DETECTION — risk 65/100
+- Miner: zk-wash-evidence
+- Over the last 120 blocks on Ethereum, WETH shows a HIGH wash-trading risk (score 0.65): 2,500 transfers among 821 addresses, with 183 reciprocal address pairs carrying about 85.14% (85.1%) of volume in round trips. The busiest sender moved 41.03% (41.0%) of volume. This is a heuristic over Transfer logs, not a proof of intent.
+
+### SOCIAL_BOT_DETECTION — unscored (miner answer carried no derivable risk score)
+- Miner: a1-preflight
+- Miner answer carried no findings text (fields: account, verdict, bot_score, signals).
+
+### SANCTIONS_SCREENING_MATCH — risk 100/100
+- Miner: chainsight-oracle
+- SANCTIONS MATCH: FREEZER AIR CONTRACTOR S.A. (lists: ofac-sdn).
+
+## Cost line
+
+5 paid requests · 5 receipts · total cost 0.05 USD (testnet USDC)
+
+Receipts: 0x5ac5a0a68eb4660d26656046142c0463e5ff0c706346f2bb529ca599d5f52116, 0x00ba55382694fef56982909e9ea4e7a76e1dc1586a9bca86394a34f7eee03dda, 0xecbf4d2e52fd103a1ae749546fdb7193062ffdca95f4a043335e01f4a203d7b8, 0x8213f93a0934baab9b5f2be4e98ae1714b17fa606127180497762588b3b61377, 0x1686863e05ff895ac6399bc7dac41c7101cf07b06d00cfe4360d9e7f8099fcd0
+
+Memo hash (SHA-256): cc4ac0f112a74f522db4f58c9a9bbee56d132e70435813a6246deb76d450faa1
+
+Memo written to out/memo-2026-11-13T20-08-03-089Z.{json,md}; full run evidence in out/run-2026-11-13T20-08-03-089Z.json
+
+--- telegraph_account (AFTER the run) ---
+wallet        : 0x3C20EE9f54Efe5Ad1377f064c6C0EA8C3a6c0C46
+network       : eip155:11155111 (Ethereum Sepolia, Telegraph beta 2)
+wallet USDC   : 0   wallet ETH: 0.04999999998955356
+escrow        : spendable 1 / deposited 1 / debt 0
+limits        : max $0.5/ask, $5/day, spent today $0.18
+
+spent_today moved $0.13 -> $0.18 — the run's settled cost.
+
+--- Receipt recap (real Telegraph receipts, testnet) ---
+SMART_CONTRACT_AUDIT         miner sca-ghsa               cost $0.01  receipt 0x5ac5a0a68eb4660d26656046142c0463e5ff0c706346f2bb529ca599d5f52116
+ONCHAIN_METRIC_VERIFY        miner livecert               cost $0.01  receipt 0x00ba55382694fef56982909e9ea4e7a76e1dc1586a9bca86394a34f7eee03dda
+WASH_TRADING_DETECTION       miner zk-wash-evidence       cost $0.01  receipt 0xecbf4d2e52fd103a1ae749546fdb7193062ffdca95f4a043335e01f4a203d7b8
+SOCIAL_BOT_DETECTION         miner a1-preflight           cost $0.01  receipt 0x8213f93a0934baab9b5f2be4e98ae1714b17fa606127180497762588b3b61377
+SANCTIONS_SCREENING_MATCH    miner chainsight-oracle      cost $0.01  receipt 0x1686863e05ff895ac6399bc7dac41c7101cf07b06d00cfe4360d9e7f8099fcd0
+
+================================================================================
+  Demo end. The memo is in out/, full MCP transcripts in out/mcp-session-*.json,
+  the story in docs/INTEGRATION-LOG.md, reproduction steps in docs/RUNBOOK.md.
+  Testnet evidence only - no mainnet funds were used or claimed.
+================================================================================
+
+Script done on 2026-11-13 20:08:15+00:00 [COMMAND_EXIT_CODE="0"]
